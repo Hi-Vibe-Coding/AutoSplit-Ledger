@@ -1293,9 +1293,10 @@
             } else {
               items.value.push(...parsed);
             }
+            calculated.value = false;
+            showGlowHalo.value = false;
             closeImportDialog();
-            showToast(`成功导入 ${parsed.length} 条账单记录！`);
-            runVerification();
+            showToast(`成功导入 ${parsed.length} 条账单记录！点击下方「开始验算」即可核对推演`);
           } catch (e) {
             importError.value = e.message || '解析失败，请检查 Markdown 格式';
           }
