@@ -194,14 +194,14 @@
             <span class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-xs text-slate-400">￥/USD</span>
           </div>
 
-          <div class="mt-2 flex items-center justify-between text-[11px]">
+          <div class="mt-2 flex items-center justify-between text-[11px] flex-wrap gap-1">
             <span v-if="rateLoading" class="text-slate-400 flex items-center gap-1">
               <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
               <span>正在拉取最新汇率...</span>
             </span>
             <span v-else-if="rateSyncTime && !isCustomRate" class="text-emerald-600 font-medium flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              <span>实时同步 ({{ rateSyncTime }})</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0"></span>
+              <span class="tracking-tight">实时同步 ({{ rateSyncTime }})</span>
             </span>
             <span v-else-if="isCustomRate" class="text-amber-600 font-medium">
               <span>✏️ 手动输入</span>
@@ -214,7 +214,7 @@
               v-if="isCustomRate" 
               type="button" 
               @click="resetRateToLive" 
-              class="text-blue-600 hover:underline text-[11px] font-medium"
+              class="text-blue-600 hover:underline text-[11px] font-medium ml-auto"
             >
               还原实时
             </button>
@@ -836,7 +836,13 @@
             liveRateCache.value = rate;
             isCustomRate.value = false;
             const now = new Date();
-            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const ss = String(now.getSeconds()).padStart(2, '0');
+            const timeStr = `${y}年${m}月${d}日${hh}:${mm}:${ss}`;
             rateSyncTime.value = timeStr;
             if (showNotice) {
               showToast(`已成功同步最新实时汇率：1 USD = ${rate} CNY`);
