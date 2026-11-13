@@ -194,30 +194,46 @@
             <span class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-xs text-slate-400">￥/USD</span>
           </div>
 
-          <div class="mt-2 flex items-center justify-between text-[11px] flex-wrap gap-1">
-            <span v-if="rateLoading" class="text-slate-400 flex items-center gap-1">
-              <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
-              <span>正在拉取最新汇率...</span>
-            </span>
-            <span v-else-if="rateSyncTime && !isCustomRate" class="text-emerald-600 font-medium flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0"></span>
-              <span class="tracking-tight">实时同步 ({{ rateSyncTime }})</span>
-            </span>
-            <span v-else-if="isCustomRate" class="text-amber-600 font-medium">
-              <span>✏️ 手动输入</span>
-            </span>
-            <span v-else class="text-slate-400">
-              基准: 6.67
-            </span>
+          <div class="mt-2 text-[11px] space-y-1.5">
+            <div class="flex items-center justify-between flex-wrap gap-1">
+              <span v-if="rateLoading" class="text-slate-400 flex items-center gap-1">
+                <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
+                <span>正在拉取最新汇率...</span>
+              </span>
+              <span v-else-if="rateSyncTime && !isCustomRate" class="text-emerald-600 font-medium flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0"></span>
+                <span class="tracking-tight">实时同步 ({{ rateSyncTime }})</span>
+              </span>
+              <span v-else-if="isCustomRate" class="text-amber-600 font-medium">
+                <span>✏️ 手动输入</span>
+              </span>
+              <span v-else class="text-slate-400">
+                基准: 6.67
+              </span>
 
-            <button 
-              v-if="isCustomRate" 
-              type="button" 
-              @click="resetRateToLive" 
-              class="text-blue-600 hover:underline text-[11px] font-medium ml-auto"
-            >
-              还原实时
-            </button>
+              <button 
+                v-if="isCustomRate" 
+                type="button" 
+                @click="resetRateToLive" 
+                class="text-blue-600 hover:underline text-[11px] font-medium ml-auto"
+              >
+                还原实时
+              </button>
+            </div>
+
+            <!-- 数据来源按钮 -->
+            <div class="pt-1.5 border-t border-slate-200/60 flex items-center justify-between">
+              <button 
+                type="button" 
+                @click="openRateSourceModal" 
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50/80 border border-blue-200/60 transition cursor-pointer"
+                title="查看当前汇率数据来源于哪个公开 API 接口"
+              >
+                <span>🌐 查看数据来源</span>
+                <span class="text-[10px]">↗</span>
+              </button>
+              <span class="text-[10px] text-slate-400">权威公开·透明可查</span>
+            </div>
           </div>
         </div>
 
@@ -736,6 +752,110 @@
       </div>
     </dialog>
 
+    <!-- 汇率数据源核验弹窗 (遵循现代 native dialog 规范) -->
+    <dialog 
+      id="rateSourceDialog" 
+      ref="rateSourceModal" 
+      aria-labelledby="rate-source-title"
+      closedby="any"
+      class="rounded-2xl p-0 w-full max-w-lg bg-white shadow-2xl border border-slate-200 text-slate-800 m-auto"
+    >
+      <div class="p-6 w-full flex flex-col max-h-[85vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <span class="text-xl">🌐</span>
+            <h3 id="rate-source-title" class="text-base font-bold text-slate-900">
+              实时汇率公开数据源说明
+            </h3>
+          </div>
+          <button 
+            type="button" 
+            @click="closeRateSourceModal" 
+            class="text-slate-400 hover:text-slate-600 text-lg p-1"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="py-4 space-y-4 text-xs">
+          <p class="text-slate-600 leading-relaxed">
+            为了确保合伙双方对账的公信力与透明度，本系统汇率直接从国际公开、开放免鉴权的权威外汇数据接口动态拉取，未做任何人工干预或中间加价：
+          </p>
+
+          <!-- 当前实际生效源 -->
+          <div class="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-blue-900 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                当前成功调用的接口节点
+              </span>
+              <span class="text-[10px] bg-blue-200/70 text-blue-800 px-2 py-0.5 rounded font-mono font-semibold">Active</span>
+            </div>
+            
+            <div class="text-slate-700 font-medium">
+              服务提供方：<span class="font-semibold text-slate-900">{{ rateSourceName || 'open.er-api.com (开放汇率公共服务)' }}</span>
+            </div>
+
+            <div class="text-slate-700 font-medium break-all">
+              API 地址：
+              <a 
+                :href="rateSourceUrl || 'https://open.er-api.com/v6/latest/USD'" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                class="text-blue-600 hover:underline font-mono inline-flex items-center gap-0.5"
+              >
+                <span>{{ rateSourceUrl || 'https://open.er-api.com/v6/latest/USD' }}</span>
+                <span class="text-[10px]">↗</span>
+              </a>
+            </div>
+
+            <div class="text-slate-500 text-[11px] pt-1.5 border-t border-blue-100 flex items-center justify-between flex-wrap gap-2">
+              <span>同步时刻：{{ rateSyncTime || '已同步' }}</span>
+              <span class="font-mono font-bold text-slate-800">当前报价: 1 USD = {{ exchangeRate }} CNY</span>
+            </div>
+          </div>
+
+          <!-- 备用冗余节点 -->
+          <div class="space-y-1.5">
+            <div class="font-bold text-slate-700">系统配置的多节点高可用容灾列表：</div>
+            <ul class="space-y-1.5 text-slate-500 text-[11px]">
+              <li class="p-2 rounded-lg bg-slate-50 border border-slate-200/70 flex items-center justify-between">
+                <div>
+                  <span class="font-semibold text-slate-700">1. open.er-api.com</span>
+                  <span class="text-slate-400 block text-[10px]">开放式每日汇率公共接口</span>
+                </div>
+                <a href="https://open.er-api.com/v6/latest/USD" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">验证源 JSON ↗</a>
+              </li>
+              <li class="p-2 rounded-lg bg-slate-50 border border-slate-200/70 flex items-center justify-between">
+                <div>
+                  <span class="font-semibold text-slate-700">2. api.exchangerate-api.com</span>
+                  <span class="text-slate-400 block text-[10px]">国际外汇牌价开放数据源</span>
+                </div>
+                <a href="https://api.exchangerate-api.com/v4/latest/USD" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">验证源 JSON ↗</a>
+              </li>
+              <li class="p-2 rounded-lg bg-slate-50 border border-slate-200/70 flex items-center justify-between">
+                <div>
+                  <span class="font-semibold text-slate-700">3. jsDelivr @fawazahmed0/currency-api</span>
+                  <span class="text-slate-400 block text-[10px]">开源全球分布式 CDN 汇率镜像</span>
+                </div>
+                <a href="https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">验证源 JSON ↗</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-end">
+          <button 
+            type="button" 
+            @click="closeRateSourceModal" 
+            class="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </dialog>
+
     <!-- Toast 提示条 -->
     <div 
       v-if="toastMessage" 
@@ -769,6 +889,21 @@
         const rateSyncTime = ref('');
         const liveRateCache = ref(null);
         const isCustomRate = ref(false);
+        const rateSourceModal = ref(null);
+        const rateSourceUrl = ref('https://open.er-api.com/v6/latest/USD');
+        const rateSourceName = ref('open.er-api.com (开放外汇汇率公共服务)');
+
+        const openRateSourceModal = () => {
+          if (rateSourceModal.value) {
+            rateSourceModal.value.showModal();
+          }
+        };
+
+        const closeRateSourceModal = () => {
+          if (rateSourceModal.value) {
+            rateSourceModal.value.close();
+          }
+        };
 
         const payerAName = ref('支付方A');
         const payerBName = ref('支付方B');
@@ -793,6 +928,8 @@
               const data = await res.json();
               if (data.rates && data.rates.CNY) {
                 rate = parseFloat(Number(data.rates.CNY).toFixed(4));
+                rateSourceUrl.value = 'https://open.er-api.com/v6/latest/USD';
+                rateSourceName.value = 'open.er-api.com (开放外汇汇率公共服务)';
               }
             }
           } catch (e1) {
@@ -807,6 +944,8 @@
                 const data = await res.json();
                 if (data.rates && data.rates.CNY) {
                   rate = parseFloat(Number(data.rates.CNY).toFixed(4));
+                  rateSourceUrl.value = 'https://api.exchangerate-api.com/v4/latest/USD';
+                  rateSourceName.value = 'api.exchangerate-api.com (国际外汇牌价开放数据源)';
                 }
               }
             } catch (e2) {
@@ -822,6 +961,8 @@
                 const data = await res.json();
                 if (data.usd && data.usd.cny) {
                   rate = parseFloat(Number(data.usd.cny).toFixed(4));
+                  rateSourceUrl.value = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json';
+                  rateSourceName.value = 'Currency-API via jsDelivr CDN (全球开源镜像)';
                 }
               }
             } catch (e3) {
@@ -1465,6 +1606,11 @@
           rateLoading,
           rateSyncTime,
           isCustomRate,
+          rateSourceModal,
+          rateSourceUrl,
+          rateSourceName,
+          openRateSourceModal,
+          closeRateSourceModal,
           fetchLiveRate,
           resetRateToLive,
           payerAName,
