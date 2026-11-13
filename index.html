@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoSplit Ledger - 店铺采购对账与自动平摊助手</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Modern Dialog & Scroll styles compliant with modern web guidance */
+    dialog:modal {
+      overscroll-behavior: contain;
+    }
+    dialog::backdrop {
+      overflow: hidden;
+      overscroll-behavior: contain;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
+    }
+    dialog[open] {
+      display: flex;
+    }
+    [v-cloak] { display: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen antialiased selection:bg-blue-500 selection:text-white">
+  <div id="app" v-cloak class="max-w-6xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    
+    <!-- 顶部导航与标题 -->
+    <header class="mb-8">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6 border-b border-slate-200">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-blue-600 text-white font-bold text-lg shadow-md shadow-blue-500/20">
+              ⚖️
+            </span>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              AutoSplit Ledger
+            </h1>
+            <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700">
+              合伙平摊对账
+            </span>
+          </div>
+          <p class="text-sm text-slate-500 mt-1">
+            双人合伙开店采购账单透明对账、多币种折算与白盒公式验算工具
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button 
+            type="button" 
+            @click="copyShareLink" 
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 shadow-sm transition active:scale-95"
+            title="生成包含当前账单数据的链接，发送给对方即可在任意浏览器直接核验"
+          >
+            <span>🔗</span>
+            <span>分享此账单链接</span>
+          </button>
+          <button 
+            type="button" 
+            @click="exportMarkdown" 
+            class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 shadow-sm transition active:scale-95"
+            title="导出为 Markdown 表格格式"
+          >
+            <span>📄</span>
+            <span>导出 Markdown</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 配置面板 -->
+    <section class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 mb-6">
+      <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+        核算参数配置
+      </h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+        <!-- 美元汇率 -->
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+          <label class="block text-xs font-medium text-slate-500 mb-1">
+            美元兑人民币汇率 (1 USD = ? CNY)
+          </label>
+          <div class="relative mt-1">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold">$</span>
+            <input 
+              type="number" 
+              step="0.0001" 
+              v-model.number="exchangeRate" 
+              class="w-full pl-8 pr-16 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+            <span class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-xs text-slate-400">￥/USD</span>
+          </div>
+        </div>
+
+        <!-- 支付方 A 称呼 -->
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+          <label class="block text-xs font-medium text-slate-500 mb-1">
+            支付方 A 名称 / 称呼
+          </label>
+          <input 
+            type="text" 
+            v-model.trim="payerAName" 
+            placeholder="支付方A"
+            class="w-full px-3 py-1.5 mt-1 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+        </div>
+
+        <!-- 支付方 B 称呼 -->
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
+          <label class="block text-xs font-medium text-slate-500 mb-1">
+            支付方 B 名称 / 称呼
+          </label>
+          <input 
+            type="text" 
+            v-model.trim="payerBName" 
+            placeholder="支付方B"
+            class="w-full px-3 py-1.5 mt-1 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+        </div>
+
+        <!-- 分摊比例 -->
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-medium text-slate-500">平摊承担比例</label>
+            <span class="text-xs font-bold text-blue-600">{{ splitRatioA }}% : {{ 100 - splitRatioA }}%</span>
+          </div>
+          <div class="flex items-center gap-2 mt-2">
+            <span class="text-xs text-slate-500">{{ payerAName || 'A' }}</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="100" 
+              step="5" 
+              v-model.number="splitRatioA"
+              class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+            >
+            <span class="text-xs text-slate-500">{{ payerBName || 'B' }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 账单明细表格 -->
+    <main class="bg-white rounded-2xl shadow-sm border border-slate-200/80 mb-6 overflow-hidden">
+      <!-- 表格操作栏 -->
+      <div class="p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <h2 class="text-base font-bold text-slate-800">
+            采购账单明细
+          </h2>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
+            共 {{ items.length }} 笔记录
+          </span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button 
+            type="button" 
+            @click="addRow" 
+            class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition"
+          >
+            <span>➕ 添加一行</span>
+          </button>
+          <button 
+            type="button" 
+            @click="openImportDialog" 
+            class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition"
+            title="支持直接粘贴 Markdown 格式的采购表格"
+          >
+            <span>📋 粘贴 Markdown 表格</span>
+          </button>
+          <button 
+            type="button" 
+            @click="resetToDefault" 
+            class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 transition"
+          >
+            <span>🔄 恢复示例</span>
+          </button>
+          <button 
+            type="button" 
+            @click="clearAll" 
+            class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
+          >
+            <span>🗑️ 清空</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 表格主体 -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200 text-xs">
+            <tr>
+              <th scope="col" class="py-3 px-3 w-12 text-center">#</th>
+              <th scope="col" class="py-3 px-3 w-32">时间</th>
+              <th scope="col" class="py-3 px-4 min-w-[240px]">产品 / 服务描述</th>
+              <th scope="col" class="py-3 px-3 w-44">花费金额与币种</th>
+              <th scope="col" class="py-3 px-3 w-28 text-center">{{ payerAName || '支付方A' }}</th>
+              <th scope="col" class="py-3 px-3 w-28 text-center">{{ payerBName || '支付方B' }}</th>
+              <th scope="col" class="py-3 px-3 w-16 text-center">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr v-for="(row, index) in items" :key="row.id" class="hover:bg-slate-50/60 transition group">
+              <!-- 序号 -->
+              <td class="py-2.5 px-3 text-center text-xs text-slate-400 font-mono">
+                {{ index + 1 }}
+              </td>
+
+              <!-- 时间 -->
+              <td class="py-2.5 px-3">
+                <input 
+                  type="text" 
+                  v-model="row.date" 
+                  placeholder="YYYY.MM.DD"
+                  class="w-full px-2 py-1 text-xs border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded bg-transparent transition"
+                >
+              </td>
+
+              <!-- 产品服务 -->
+              <td class="py-2.5 px-4">
+                <input 
+                  type="text" 
+                  v-model="row.service" 
+                  placeholder="输入产品或服务说明"
+                  class="w-full px-2 py-1 text-xs sm:text-sm font-medium border border-transparent hover:border-slate-300 focus:border-blue-500 focus:bg-white rounded bg-transparent transition"
+                >
+              </td>
+
+              <!-- 金额与币种 -->
+              <td class="py-2.5 px-3">
+                <div class="flex items-center gap-1.5">
+                  <input 
+                    type="number" 
+                    step="any" 
+                    v-model.number="row.amount" 
+                    placeholder="0.00"
+                    class="w-24 px-2 py-1 text-xs sm:text-sm font-semibold border border-slate-200 focus:border-blue-500 rounded bg-white"
+                  >
+                  <select 
+                    v-model="row.currency" 
+                    class="text-xs font-semibold py-1 px-1.5 border border-slate-200 rounded bg-slate-50 focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="CNY">RMB (￥)</option>
+                  </select>
+                </div>
+              </td>
+
+              <!-- 支付方 A 勾选 -->
+              <td class="py-2.5 px-3 text-center">
+                <label class="inline-flex items-center justify-center p-1.5 rounded-lg cursor-pointer transition" :class="row.payer === 'A' ? 'bg-blue-100 text-blue-700' : 'text-slate-300 hover:text-slate-400'">
+                  <input 
+                    type="radio" 
+                    :name="'payer-' + row.id" 
+                    value="A" 
+                    v-model="row.payer" 
+                    class="sr-only"
+                  >
+                  <span class="text-base font-bold">{{ row.payer === 'A' ? '✔️' : '○' }}</span>
+                </label>
+              </td>
+
+              <!-- 支付方 B 勾选 -->
+              <td class="py-2.5 px-3 text-center">
+                <label class="inline-flex items-center justify-center p-1.5 rounded-lg cursor-pointer transition" :class="row.payer === 'B' ? 'bg-purple-100 text-purple-700' : 'text-slate-300 hover:text-slate-400'">
+                  <input 
+                    type="radio" 
+                    :name="'payer-' + row.id" 
+                    value="B" 
+                    v-model="row.payer" 
+                    class="sr-only"
+                  >
+                  <span class="text-base font-bold">{{ row.payer === 'B' ? '✔️' : '○' }}</span>
+                </label>
+              </td>
+
+              <!-- 操作 -->
+              <td class="py-2.5 px-3 text-center">
+                <button 
+                  type="button" 
+                  @click="removeRow(index)" 
+                  class="text-slate-300 hover:text-rose-600 transition p-1 rounded"
+                  title="删除此行"
+                >
+                  ✕
+                </button>
+              </td>
+            </tr>
+
+            <tr v-if="items.length === 0">
+              <td colspan="7" class="py-12 text-center text-slate-400 text-sm">
+                当前表格为空，点击上方「➕ 添加一行」或「📋 粘贴 Markdown 表格」开始
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <!-- 开始验算核心操作按钮 -->
+    <div class="flex justify-center mb-8">
+      <button 
+        type="button" 
+        @click="runVerification" 
+        class="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-base shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 transform hover:-translate-y-0.5 transition active:scale-95"
+      >
+        <span>⚡</span>
+        <span>开始验算账目与平摊推演</span>
+      </button>
+    </div>
+
+    <!-- 验算结果展示区 -->
+    <section v-if="calculated" ref="resultSection" class="space-y-6">
+      
+      <!-- 结算核心看板 (大卡片) -->
+      <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 rounded-2xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+        <div class="absolute -right-12 -top-12 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl"></div>
+
+        <div class="relative z-10">
+          <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-700/60 pb-5 mb-6">
+            <div>
+              <span class="text-xs uppercase tracking-wider text-blue-400 font-semibold">最终平摊结算建议</span>
+              <h3 class="text-xl sm:text-2xl font-black mt-1 flex items-center gap-2">
+                <span v-if="calcResult.transferAmount === 0">🎉 账目刚好对等，无需相互转账！</span>
+                <span v-else>
+                  👉 由 
+                  <span class="text-amber-300 underline underline-offset-4">{{ calcResult.debtorName }}</span> 
+                  向 
+                  <span class="text-emerald-300 underline underline-offset-4">{{ calcResult.creditorName }}</span> 
+                  转账
+                </span>
+              </h3>
+            </div>
+            
+            <div v-if="calcResult.transferAmount > 0" class="text-right">
+              <span class="text-xs text-slate-400 block">应转账金额</span>
+              <div class="text-3xl sm:text-4xl font-black text-emerald-400 font-mono">
+                ¥ {{ calcResult.transferAmountFormatted }}
+                <span class="text-xs font-normal text-slate-300">元 (精确: {{ calcResult.transferAmountRaw }})</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 双方对比数据卡片 -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+            <div class="bg-slate-800/60 backdrop-blur rounded-xl p-4 border border-slate-700/50">
+              <span class="text-xs text-slate-400 block">{{ payerAName || '支付方A' }} 垫付总额</span>
+              <span class="text-lg font-bold text-slate-100 font-mono mt-1 block">¥ {{ calcResult.totalAFormatted }}</span>
+              <span class="text-[11px] text-slate-400">USD ${{ calcResult.usdTotalA }} + RMB ¥{{ calcResult.cnyTotalA }}</span>
+            </div>
+
+            <div class="bg-slate-800/60 backdrop-blur rounded-xl p-4 border border-slate-700/50">
+              <span class="text-xs text-slate-400 block">店铺对外采购总开销</span>
+              <span class="text-2xl font-black text-blue-400 font-mono mt-0.5 block">¥ {{ calcResult.totalAllFormatted }}</span>
+              <span class="text-[11px] text-slate-400">折合人民币总支出</span>
+            </div>
+
+            <div class="bg-slate-800/60 backdrop-blur rounded-xl p-4 border border-slate-700/50">
+              <span class="text-xs text-slate-400 block">{{ payerBName || '支付方B' }} 垫付总额</span>
+              <span class="text-lg font-bold text-slate-100 font-mono mt-1 block">¥ {{ calcResult.totalBFormatted }}</span>
+              <span class="text-[11px] text-slate-400">USD ${{ calcResult.usdTotalB }} + RMB ¥{{ calcResult.cnyTotalB }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 详细计算推演过程 (严格还原推导逻辑) -->
+      <div class="bg-white rounded-2xl p-6 sm:p-7 shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100">
+          <div>
+            <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+              <span>📐</span>
+              <span>计算逻辑透明推演</span>
+            </h3>
+            <p class="text-xs text-slate-500 mt-0.5">
+              白盒公式展示，每一步数学运算均可直接追溯验算
+            </p>
+          </div>
+          <button 
+            type="button" 
+            @click="copyDeductionText" 
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95"
+          >
+            <span>📋</span>
+            <span>{{ copyBtnText }}</span>
+          </button>
+        </div>
+
+        <!-- 推演文字块 (等宽代码样式) -->
+        <div class="bg-slate-950 text-slate-100 rounded-xl p-5 font-mono text-xs sm:text-sm leading-relaxed overflow-x-auto shadow-inner border border-slate-800">
+          <div class="space-y-2 whitespace-pre-wrap selection:bg-blue-600 selection:text-white">{{ calcResult.deductionText }}</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Markdown 粘贴导入弹窗 (使用现代化原生 dialog) -->
+    <dialog 
+      id="importDialog" 
+      ref="importModal" 
+      aria-labelledby="import-title"
+      closedby="any"
+      class="rounded-2xl p-0 w-full max-w-2xl bg-white shadow-2xl border border-slate-200 text-slate-800 m-auto"
+    >
+      <div class="p-6 w-full flex flex-col max-h-[85vh]">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <span class="text-xl">📋</span>
+            <h3 id="import-title" class="text-base font-bold text-slate-900">
+              粘贴识别 Markdown 账单表格
+            </h3>
+          </div>
+          <button 
+            type="button" 
+            @click="closeImportDialog" 
+            class="text-slate-400 hover:text-slate-600 text-lg p-1"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="py-4 flex-1 overflow-y-auto">
+          <p class="text-xs text-slate-500 mb-2">
+            直接复制 Markdown 表格或制表符文本粘贴到下方，系统将自动识别：时间、产品服务名、金额币种及哪一方支付。
+          </p>
+          <textarea 
+            v-model="importContent" 
+            rows="9" 
+            placeholder="| 时间 | 产品服务 | 花费金额 | 支付方A | 支付方B |
+|:-----------|:-----------------------------------|:---------|:-------|:-------|
+| 2026.10.22 | WebShare Static Residential IP     | 3.5$     | ✔️     |        |
+| 2026.10.30 | 机场(蓝胖云)- 单月                  | 12￥      |        | ✔️     |"
+            class="w-full p-3 font-mono text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+          ></textarea>
+
+          <div v-if="importError" class="mt-2 text-xs text-rose-600 flex items-center gap-1">
+            <span>⚠️</span>
+            <span>{{ importError }}</span>
+          </div>
+
+          <div class="mt-3 flex items-center gap-4 text-xs text-slate-600">
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" value="replace" v-model="importMode" class="text-blue-600">
+              <span>覆盖当前表格</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" value="append" v-model="importMode" class="text-blue-600">
+              <span>追加到现有表格</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button 
+            type="button" 
+            @click="closeImportDialog" 
+            class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
+          >
+            取消
+          </button>
+          <button 
+            type="button" 
+            @click="handleImportSubmit" 
+            class="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-sm shadow-blue-500/20"
+          >
+            解析并导入
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Toast 提示条 -->
+    <div 
+      v-if="toastMessage" 
+      class="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold flex items-center gap-2 transform transition-all duration-200"
+    >
+      <span>✅</span>
+      <span>{{ toastMessage }}</span>
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="mt-12 text-center text-xs text-slate-400 pb-8">
+      <p>AutoSplit Ledger &copy; 2026 · 数据纯本地浏览器运算，隐私完全隔离 · 托管于 GitHub Pages</p>
+    </footer>
+
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        const defaultSampleData = [
+          { id: 1, date: '2026.10.22', service: 'WebShare Static Residential IP(储蓄卡-自动续费-153.58.34.14)', amount: 3.5, currency: 'USD', payer: 'A' },
+          { id: 2, date: '2026.10.30', service: '机场(蓝胖云)- 单月', amount: 12, currency: 'CNY', payer: 'B' },
+          { id: 3, date: '2026.11.03', service: 'XMRTH机场(单月)', amount: 16, currency: 'CNY', payer: 'A' },
+          { id: 4, date: '2026.11.11', service: 'ChatGPT Plus(使用手机端的谷歌商店作为支付渠道-招行万事达借记卡)', amount: 20, currency: 'USD', payer: 'B' }
+        ];
+
+        const exchangeRate = ref(6.67);
+        const payerAName = ref('支付方A');
+        const payerBName = ref('支付方B');
+        const splitRatioA = ref(50);
+        const items = ref([...defaultSampleData]);
+        const calculated = ref(false);
+        const resultSection = ref(null);
+        const toastMessage = ref('');
+        const copyBtnText = ref('复制推演过程');
+
+        // 导入弹窗状态
+        const importModal = ref(null);
+        const importContent = ref('');
+        const importMode = ref('replace');
+        const importError = ref('');
+
+        // 计算结果数据结构
+        const calcResult = reactive({
+          usdTotalA: 0,
+          cnyTotalA: 0,
+          totalA: 0,
+          totalAFormatted: '0.00',
+          
+          usdTotalB: 0,
+          cnyTotalB: 0,
+          totalB: 0,
+          totalBFormatted: '0.00',
+
+          totalAll: 0,
+          totalAllFormatted: '0.00',
+
+          shareA: 0,
+          shareB: 0,
+          shareAFormatted: '0.00',
+
+          transferAmount: 0,
+          transferAmountRaw: '0',
+          transferAmountFormatted: '0.00',
+          debtorName: '',
+          creditorName: '',
+
+          deductionText: ''
+        });
+
+        const showToast = (msg) => {
+          toastMessage.value = msg;
+          setTimeout(() => {
+            if (toastMessage.value === msg) {
+              toastMessage.value = '';
+            }
+          }, 3000);
+        };
+
+        const addRow = () => {
+          items.value.push({
+            id: Date.now() + Math.random(),
+            date: new Date().toISOString().slice(0, 10).replace(/-/g, '.'),
+            service: '',
+            amount: 0,
+            currency: 'CNY',
+            payer: 'A'
+          });
+        };
+
+        const removeRow = (index) => {
+          items.value.splice(index, 1);
+        };
+
+        const clearAll = () => {
+          if (confirm('确定要清空表格的所有账单记录吗？')) {
+            items.value = [];
+            calculated.value = false;
+          }
+        };
+
+        const resetToDefault = () => {
+          items.value = JSON.parse(JSON.stringify(defaultSampleData));
+          exchangeRate.value = 6.67;
+          payerAName.value = '支付方A';
+          payerBName.value = '支付方B';
+          splitRatioA.value = 50;
+          calculated.value = false;
+          showToast('已恢复为初始示例数据');
+        };
+
+        // 核心验算逻辑
+        const runVerification = () => {
+          const rate = Number(exchangeRate.value) || 0;
+          const nameA = payerAName.value || '支付方A';
+          const nameB = payerBName.value || '支付方B';
+          const ratioA = splitRatioA.value / 100;
+          const ratioB = (100 - splitRatioA.value) / 100;
+
+          let usdA = 0, cnyA = 0;
+          let usdB = 0, cnyB = 0;
+
+          // 明细项收集用于精确推导文字
+          const itemsA = [];
+          const itemsB = [];
+
+          items.value.forEach(item => {
+            const amt = Number(item.amount) || 0;
+            const cur = item.currency === 'USD' ? 'USD' : 'CNY';
+            if (item.payer === 'A') {
+              if (cur === 'USD') usdA += amt;
+              else cnyA += amt;
+              itemsA.push({ amt, cur });
+            } else if (item.payer === 'B') {
+              if (cur === 'USD') usdB += amt;
+              else cnyB += amt;
+              itemsB.push({ amt, cur });
+            }
+          });
+
+          // 总支出计算
+          const totalA = usdA * rate + cnyA;
+          const totalB = usdB * rate + cnyB;
+          const totalAll = totalA + totalB;
+
+          // 应承担金额 (默认50%对半)
+          const shareA = totalAll * ratioA;
+          const shareB = totalAll * ratioB;
+
+          calcResult.usdTotalA = usdA;
+          calcResult.cnyTotalA = cnyA;
+          calcResult.totalA = totalA;
+          calcResult.totalAFormatted = totalA.toFixed(2);
+
+          calcResult.usdTotalB = usdB;
+          calcResult.cnyTotalB = cnyB;
+          calcResult.totalB = totalB;
+          calcResult.totalBFormatted = totalB.toFixed(2);
+
+          calcResult.totalAll = totalAll;
+          calcResult.totalAllFormatted = totalAll.toFixed(2);
+
+          calcResult.shareA = shareA;
+          calcResult.shareB = shareB;
+          calcResult.shareAFormatted = shareA.toFixed(2);
+
+          // 差额结算推算
+          // 若对半平摊：多付者 - 应承担 = 实际垫付超过的部分 = 少付者应转账金额
+          const diffA = totalA - shareA; // 若 > 0 则 A 多付了，若 < 0 则 A 少付了
+          const diffB = totalB - shareB; // 若 > 0 则 B 多付了，若 < 0 则 B 少付了
+
+          let debtor = '';
+          let creditor = '';
+          let transfer = 0;
+
+          if (diffB > 0.000001) {
+            // B 多付，A 给 B 转账
+            debtor = nameA;
+            creditor = nameB;
+            transfer = diffB;
+          } else if (diffA > 0.000001) {
+            // A 多付，B 给 A 转账
+            debtor = nameB;
+            creditor = nameA;
+            transfer = diffA;
+          } else {
+            debtor = '';
+            creditor = '';
+            transfer = 0;
+          }
+
+          calcResult.debtorName = debtor;
+          calcResult.creditorName = creditor;
+          calcResult.transferAmount = transfer;
+          calcResult.transferAmountRaw = transfer.toFixed(4).replace(/\.?0+$/, '');
+          calcResult.transferAmountFormatted = transfer.toFixed(2);
+
+          // 组织推演过程文本 (与用户要求完全对应的白盒推导格式)
+          const formatExpr = (usd, cny, total) => {
+            const parts = [];
+            const calcParts = [];
+            if (usd > 0) {
+              parts.push(`${usd}美元`);
+              calcParts.push(`${usd} * ${rate}`);
+            }
+            if (cny > 0) {
+              parts.push(`${cny}人民币`);
+              calcParts.push(`${cny}`);
+            }
+            if (parts.length === 0) return '0(人民币)';
+            if (usd > 0 && cny > 0) {
+              return `${parts.join(' + ')} = ${calcParts.join(' + ')} = ${total}(人民币)`;
+            } else if (usd > 0) {
+              return `${parts[0]} = ${calcParts[0]} = ${total}(人民币)`;
+            } else {
+              return `${parts[0]} = ${total}(人民币)`;
+            }
+          };
+
+          const exprA = formatExpr(usdA, cnyA, totalA);
+          const exprB = formatExpr(usdB, cnyB, totalB);
+
+          let deduction = '';
+          deduction += `${nameA}支付的各项金额总和 = ${exprA}\n`;
+          deduction += `${nameB}支付的各项金额总和 = ${exprB}\n`;
+          deduction += `店铺总开销 = ${nameA}支付的各项金额总和 + ${nameB}支付的各项金额总和 = ${totalA}(人民币) + ${totalB}(人民币) = ${totalAll}(人民币)\n`;
+          
+          if (splitRatioA.value === 50) {
+            deduction += `每人应承担的原始金额 = ${totalAll}(人民币) / 2 = ${shareA}(人民币)\n`;
+          } else {
+            deduction += `按出资比例分配(${ratioA * 100}% : ${ratioB * 100}%)：${nameA}应承担 ${shareA}(人民币)，${nameB}应承担 ${shareB}(人民币)\n`;
+          }
+
+          if (transfer > 0.000001) {
+            if (splitRatioA.value === 50) {
+              const morePayer = totalB > totalA ? nameB : nameA;
+              const lessPayer = totalB > totalA ? nameA : nameB;
+              const higherTotal = Math.max(totalA, totalB);
+              deduction += `因为，${morePayer}支付的各项金额总和 > ${lessPayer}支付的各项金额总和，故最终结算由 ${lessPayer} 向 ${morePayer} 转账金额 = ${higherTotal} - ${shareA} = ${calcResult.transferAmountRaw}(人民币)\n`;
+              deduction += `转账完成后双方实际承担的支出均为 ${shareA}(人民币)，账目刚好清零持平。`;
+            } else {
+              deduction += `故最终结算由 ${debtor} 向 ${creditor} 转账 ${calcResult.transferAmountRaw}(人民币)，双方各自实际支出符合约定比例。`;
+            }
+          } else {
+            deduction += `双方支付金额刚好一致，无需相互转账，账目已持平。`;
+          }
+
+          calcResult.deductionText = deduction;
+          calculated.value = true;
+
+          // 平滑滚动至结果区
+          nextTick(() => {
+            if (resultSection.value) {
+              resultSection.value.scrollIntoView({ behavior: 'smooth' });
+            }
+          });
+        };
+
+        // 复制推演过程
+        const copyDeductionText = async () => {
+          try {
+            await navigator.clipboard.writeText(calcResult.deductionText);
+            copyBtnText.value = '已复制！';
+            showToast('已复制推演过程到剪贴板');
+            setTimeout(() => {
+              copyBtnText.value = '复制推演过程';
+            }, 2500);
+          } catch (e) {
+            alert('复制失败，请手动选取复制');
+          }
+        };
+
+        // 导出为 Markdown 表格
+        const exportMarkdown = async () => {
+          const nameA = payerAName.value || '支付方A';
+          const nameB = payerBName.value || '支付方B';
+          let md = `| 时间 | 产品服务 | 花费金额 | ${nameA} | ${nameB} |\n`;
+          md += `|:-----------|:---------------------------------------------------------|:----------------|:-------|:---------|\n`;
+          items.value.forEach(item => {
+            const symbol = item.currency === 'USD' ? '$' : '￥';
+            const checkA = item.payer === 'A' ? '✔️' : '';
+            const checkB = item.payer === 'B' ? '✔️' : '';
+            md += `| ${item.date || ''} | ${item.service || ''} | ${item.amount}${symbol} | ${checkA} | ${checkB} |\n`;
+          });
+          
+          try {
+            await navigator.clipboard.writeText(md);
+            showToast('已复制 Markdown 表格到剪贴板！');
+          } catch (err) {
+            prompt('请复制以下 Markdown 表格：', md);
+          }
+        };
+
+        // 生成带数据的分享链接
+        const copyShareLink = async () => {
+          try {
+            const payload = {
+              r: exchangeRate.value,
+              a: payerAName.value,
+              b: payerBName.value,
+              s: splitRatioA.value,
+              d: items.value.map(i => ({
+                t: i.date,
+                s: i.service,
+                m: i.amount,
+                c: i.currency,
+                p: i.payer
+              }))
+            };
+            const jsonStr = JSON.stringify(payload);
+            const encoded = encodeURIComponent(btoa(unescape(encodeURIComponent(jsonStr))));
+            const url = window.location.origin + window.location.pathname + '#ledger=' + encoded;
+            await navigator.clipboard.writeText(url);
+            showToast('分享链接已复制！发送给合伙人，在任何浏览器打开即加载此账单');
+          } catch (e) {
+            showToast('生成分享链接失败');
+          }
+        };
+
+        // 尝试从 URL Hash 载入分享的数据
+        const loadFromUrlHash = () => {
+          const hash = window.location.hash;
+          if (hash && hash.startsWith('#ledger=')) {
+            try {
+              const base64 = decodeURIComponent(hash.replace('#ledger=', ''));
+              const jsonStr = decodeURIComponent(escape(atob(base64)));
+              const data = JSON.parse(jsonStr);
+              if (data && Array.isArray(data.d)) {
+                exchangeRate.value = data.r ?? 6.67;
+                payerAName.value = data.a ?? '支付方A';
+                payerBName.value = data.b ?? '支付方B';
+                splitRatioA.value = data.s ?? 50;
+                items.value = data.d.map((row, idx) => ({
+                  id: idx + 1,
+                  date: row.t || '',
+                  service: row.s || '',
+                  amount: Number(row.m) || 0,
+                  currency: row.c || 'CNY',
+                  payer: row.p || 'A'
+                }));
+                showToast('已成功从分享链接加载账单数据！');
+                runVerification();
+                return true;
+              }
+            } catch (err) {
+              console.warn('解析 URL 账单数据失败:', err);
+            }
+          }
+          return false;
+        };
+
+        // 打开/关闭 Markdown 导入弹窗
+        const openImportDialog = () => {
+          importContent.value = '';
+          importError.value = '';
+          if (importModal.value) {
+            importModal.value.showModal();
+          }
+        };
+
+        const closeImportDialog = () => {
+          if (importModal.value) {
+            importModal.value.close();
+          }
+        };
+
+        // Markdown 粘贴解析器
+        const parseMarkdownTable = (text) => {
+          const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+          if (lines.length < 2) {
+            throw new Error('未检测到有效的表格行，请至少包含表头与数据行');
+          }
+
+          // 寻找表头行
+          let headerIdx = -1;
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('|')) {
+              headerIdx = i;
+              break;
+            }
+          }
+
+          if (headerIdx === -1) {
+            throw new Error('未识别到包含 "|" 分隔符的表格内容');
+          }
+
+          // 解析单元格：剥离首尾 "|" 并分割单元格，保留空单元格以确保列位置正确
+          const splitCells = (l) => {
+            let s = l.trim();
+            if (s.startsWith('|')) s = s.slice(1);
+            if (s.endsWith('|')) s = s.slice(0, -1);
+            return s.split('|').map(c => c.trim());
+          };
+
+          const headers = splitCells(lines[headerIdx]);
+          // 查找列映射
+          let dateCol = -1;
+          let serviceCol = -1;
+          let amountCol = -1;
+          let payerACol = -1;
+          let payerBCol = -1;
+
+          headers.forEach((h, idx) => {
+            const col = h.toLowerCase();
+            if (col.includes('时间') || col.includes('日期') || col.includes('date') || col.includes('time')) dateCol = idx;
+            else if (col.includes('产品') || col.includes('服务') || col.includes('描述') || col.includes('项目') || col.includes('item') || col.includes('service')) serviceCol = idx;
+            else if (col.includes('金额') || col.includes('花费') || col.includes('费用') || col.includes('price') || col.includes('amount') || col.includes('cost')) amountCol = idx;
+            else if (col.includes('a') || col.includes('甲') || col.includes('方a')) payerACol = idx;
+            else if (col.includes('b') || col.includes('乙') || col.includes('方b')) payerBCol = idx;
+          });
+
+          // 如果没有根据名称匹配到，按默认前5列位置回退
+          if (dateCol === -1 && headers.length > 0) dateCol = 0;
+          if (serviceCol === -1 && headers.length > 1) serviceCol = 1;
+          if (amountCol === -1 && headers.length > 2) amountCol = 2;
+          if (payerACol === -1 && headers.length > 3) payerACol = 3;
+          if (payerBCol === -1 && headers.length > 4) payerBCol = 4;
+
+          const parsedRows = [];
+
+          for (let i = headerIdx + 1; i < lines.length; i++) {
+            const line = lines[i];
+            // 过滤分隔线，如 |:---|:---|
+            if (/^\|?[\s\-:|]+\|?$/.test(line)) continue;
+            if (!line.includes('|')) break; // 遇到非表格行停止
+
+            const cells = splitCells(line);
+            if (cells.length < 2) continue;
+
+            const date = cells[dateCol] || '';
+            const service = cells[serviceCol] || '';
+            const amountCell = cells[amountCol] || '';
+
+            // 解析金额与币种
+            let currency = 'CNY';
+            if (amountCell.includes('$') || /usd/i.test(amountCell) || amountCell.includes('美元')) {
+              currency = 'USD';
+            } else if (amountCell.includes('￥') || amountCell.includes('¥') || /cny|rmb/i.test(amountCell) || amountCell.includes('元')) {
+              currency = 'CNY';
+            }
+
+            // 正则提取浮点数字
+            const numMatch = amountCell.replace(/,/g, '').match(/[-+]?\d*\.?\d+/);
+            const amount = numMatch ? parseFloat(numMatch[0]) : 0;
+
+            // 识别支付方勾选
+            const valA = (cells[payerACol] || '').trim();
+            const valB = (cells[payerBCol] || '').trim();
+
+            const isChecked = (val) => {
+              return /[✔️✔√xX1是有A对]/i.test(val) || (val.length > 0 && !val.includes(' '));
+            };
+
+            let payer = 'A';
+            const checkA = isChecked(valA);
+            const checkB = isChecked(valB);
+
+            if (checkB && !checkA) {
+              payer = 'B';
+            } else if (checkA) {
+              payer = 'A';
+            } else {
+              payer = 'A';
+            }
+
+            parsedRows.push({
+              id: Date.now() + Math.random(),
+              date,
+              service,
+              amount,
+              currency,
+              payer
+            });
+          }
+
+          if (parsedRows.length === 0) {
+            throw new Error('未解析到任何有效数据行，请核对表格格式');
+          }
+
+          return parsedRows;
+        };
+
+        const handleImportSubmit = () => {
+          importError.value = '';
+          try {
+            const parsed = parseMarkdownTable(importContent.value);
+            if (importMode.value === 'replace') {
+              items.value = parsed;
+            } else {
+              items.value.push(...parsed);
+            }
+            closeImportDialog();
+            showToast(`成功导入 ${parsed.length} 条账单记录！`);
+            runVerification();
+          } catch (e) {
+            importError.value = e.message || '解析失败，请检查 Markdown 格式';
+          }
+        };
+
+        onMounted(() => {
+          // Native <dialog closedby="any"> light-dismiss fallback
+          if (!('closedBy' in HTMLDialogElement.prototype)) {
+            const outside = (e, dialog) => {
+              const r = dialog.getBoundingClientRect();
+              return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+            };
+            for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
+              let pressedOutside = false;
+              dialog.addEventListener('pointerdown', (e) => { pressedOutside = outside(e, dialog); });
+              dialog.addEventListener('pointerup', (e) => { if (pressedOutside && outside(e, dialog)) dialog.close(); });
+            }
+          }
+
+          const loaded = loadFromUrlHash();
+          // 如果未从 URL 载入，自动运行一次初始验算让界面初次打开就有直观展示
+          runVerification();
+        });
+
+        return {
+          exchangeRate,
+          payerAName,
+          payerBName,
+          splitRatioA,
+          items,
+          calculated,
+          resultSection,
+          calcResult,
+          toastMessage,
+          copyBtnText,
+          importModal,
+          importContent,
+          importMode,
+          importError,
+          addRow,
+          removeRow,
+          clearAll,
+          resetToDefault,
+          runVerification,
+          copyDeductionText,
+          exportMarkdown,
+          copyShareLink,
+          openImportDialog,
+          closeImportDialog,
+          handleImportSubmit
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
