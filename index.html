@@ -164,19 +164,60 @@
       </h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
         <!-- 美元汇率 -->
-        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60">
-          <label class="block text-xs font-medium text-slate-500 mb-1">
-            美元兑人民币汇率 (1 USD = ? CNY)
-          </label>
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/60 flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs font-medium text-slate-500">
+              美元汇率 (1 USD = ? CNY)
+            </label>
+            <!-- 实时刷新按钮 -->
+            <button 
+              type="button" 
+              @click="fetchLiveRate(true)" 
+              :disabled="rateLoading" 
+              class="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition disabled:opacity-50 cursor-pointer"
+              title="向公开汇率接口重新获取最新实时汇率"
+            >
+              <span :class="{'inline-block animate-spin': rateLoading}">🔄</span>
+              <span>{{ rateLoading ? '获取中...' : '刷新' }}</span>
+            </button>
+          </div>
+
           <div class="relative mt-1">
             <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 font-bold">$</span>
             <input 
               type="number" 
               step="0.0001" 
               v-model.number="exchangeRate" 
+              @input="isCustomRate = true"
               class="w-full pl-8 pr-16 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             >
             <span class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-xs text-slate-400">￥/USD</span>
+          </div>
+
+          <div class="mt-2 flex items-center justify-between text-[11px]">
+            <span v-if="rateLoading" class="text-slate-400 flex items-center gap-1">
+              <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
+              <span>正在拉取最新汇率...</span>
+            </span>
+            <span v-else-if="rateSyncTime && !isCustomRate" class="text-emerald-600 font-medium flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span>实时同步 ({{ rateSyncTime }})</span>
+            </span>
+            <span v-else-if="isCustomRate" class="text-amber-600 font-medium">
+              <span>✏️ 手动输入</span>
+            </span>
+            <span v-else class="text-slate-400">
+              基准: 6.67
+            </span>
+
+            <button 
+              v-if="isCustomRate" 
+              type="button" 
+              @click="resetRateToLive" 
+              class="text-blue-600 hover:underline text-[11px] font-medium"
+            >
+              还原实时
+            </button>
           </div>
         </div>
 
@@ -724,6 +765,11 @@
         ];
 
         const exchangeRate = ref(6.67);
+        const rateLoading = ref(false);
+        const rateSyncTime = ref('');
+        const liveRateCache = ref(null);
+        const isCustomRate = ref(false);
+
         const payerAName = ref('支付方A');
         const payerBName = ref('支付方B');
         const splitRatioA = ref(50);
@@ -734,6 +780,83 @@
         const copyBtnText = ref('复制推演过程');
         const showGlowHalo = ref(false);
         const showRawText = ref(true);
+
+        // 获取公网实时汇率 (采用三大公开高可用镜像源容灾)
+        const fetchLiveRate = async (showNotice = true) => {
+          rateLoading.value = true;
+          let rate = null;
+
+          // 优先源 1: open.er-api.com
+          try {
+            const res = await fetch('https://open.er-api.com/v6/latest/USD');
+            if (res.ok) {
+              const data = await res.json();
+              if (data.rates && data.rates.CNY) {
+                rate = parseFloat(Number(data.rates.CNY).toFixed(4));
+              }
+            }
+          } catch (e1) {
+            console.warn('API 1 fetch failed, trying backup API...', e1);
+          }
+
+          // 备用源 2: api.exchangerate-api.com
+          if (!rate) {
+            try {
+              const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+              if (res.ok) {
+                const data = await res.json();
+                if (data.rates && data.rates.CNY) {
+                  rate = parseFloat(Number(data.rates.CNY).toFixed(4));
+                }
+              }
+            } catch (e2) {
+              console.warn('API 2 fetch failed, trying backup API 3...', e2);
+            }
+          }
+
+          // 备用源 3: jsDelivr currency-api
+          if (!rate) {
+            try {
+              const res = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
+              if (res.ok) {
+                const data = await res.json();
+                if (data.usd && data.usd.cny) {
+                  rate = parseFloat(Number(data.usd.cny).toFixed(4));
+                }
+              }
+            } catch (e3) {
+              console.warn('All exchange rate APIs failed', e3);
+            }
+          }
+
+          rateLoading.value = false;
+
+          if (rate) {
+            exchangeRate.value = rate;
+            liveRateCache.value = rate;
+            isCustomRate.value = false;
+            const now = new Date();
+            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            rateSyncTime.value = timeStr;
+            if (showNotice) {
+              showToast(`已成功同步最新实时汇率：1 USD = ${rate} CNY`);
+            }
+          } else {
+            if (showNotice) {
+              showToast('汇率接口访问异常，保持现有基准汇率');
+            }
+          }
+        };
+
+        const resetRateToLive = () => {
+          if (liveRateCache.value) {
+            exchangeRate.value = liveRateCache.value;
+            isCustomRate.value = false;
+            showToast(`已还原为实时汇率: 1 USD = ${liveRateCache.value} CNY`);
+          } else {
+            fetchLiveRate(true);
+          }
+        };
 
         // 导入弹窗状态
         const importModal = ref(null);
@@ -843,7 +966,13 @@
 
         const resetToDefault = () => {
           items.value = JSON.parse(JSON.stringify(defaultSampleData));
-          exchangeRate.value = 6.67;
+          if (liveRateCache.value) {
+            exchangeRate.value = liveRateCache.value;
+            isCustomRate.value = false;
+          } else {
+            exchangeRate.value = 6.67;
+            fetchLiveRate(false);
+          }
           payerAName.value = '支付方A';
           payerBName.value = '支付方B';
           splitRatioA.value = 50;
@@ -1317,12 +1446,21 @@
           }
 
           const loaded = loadFromUrlHash();
+          if (!loaded) {
+            // 默认自动异步同步最新的实时公网汇率
+            fetchLiveRate(false);
+          }
           // 初始运行一次验算准备数据（初始不自动滚屏，等用户点击按钮时再缓缓滑动）
           runVerification(false);
         });
 
         return {
           exchangeRate,
+          rateLoading,
+          rateSyncTime,
+          isCustomRate,
+          fetchLiveRate,
+          resetRateToLive,
           payerAName,
           payerBName,
           splitRatioA,
