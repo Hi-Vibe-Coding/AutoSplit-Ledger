@@ -1141,27 +1141,14 @@
           }
         };
 
-        // Markdown 粘贴解析器
+        // Markdown 粘贴解析器 (高容错设计：支持带表头/无表头纯数据、尾部多余字段、20$(133￥)复合金额等)
         const parseMarkdownTable = (text) => {
           const lines = text.trim().split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-          if (lines.length < 2) {
-            throw new Error('未检测到有效的表格行，请至少包含表头与数据行');
+          if (lines.length === 0) {
+            throw new Error('未检测到任何输入内容');
           }
 
-          // 寻找表头行
-          let headerIdx = -1;
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes('|')) {
-              headerIdx = i;
-              break;
-            }
-          }
-
-          if (headerIdx === -1) {
-            throw new Error('未识别到包含 "|" 分隔符的表格内容');
-          }
-
-          // 解析单元格：剥离首尾 "|" 并分割单元格，保留空单元格以确保列位置正确
+          // 解析单元格：剥离首尾 "|" 并分割单元格，保留中间空单元格确保列位置对齐
           const splitCells = (l) => {
             let s = l.trim();
             if (s.startsWith('|')) s = s.slice(1);
@@ -1169,69 +1156,109 @@
             return s.split('|').map(c => c.trim());
           };
 
-          const headers = splitCells(lines[headerIdx]);
-          // 查找列映射
-          let dateCol = -1;
-          let serviceCol = -1;
-          let amountCol = -1;
-          let payerACol = -1;
-          let payerBCol = -1;
+          // 过滤纯分隔线，例如 |:---|:---|
+          const validLines = lines.filter(l => l.includes('|') && !/^\|?[\s\-:|]+\|?$/.test(l));
+          if (validLines.length === 0) {
+            throw new Error('未识别到包含 "|" 分隔符的表格数据行');
+          }
 
-          headers.forEach((h, idx) => {
-            const col = h.toLowerCase();
-            if (col.includes('时间') || col.includes('日期') || col.includes('date') || col.includes('time')) dateCol = idx;
-            else if (col.includes('产品') || col.includes('服务') || col.includes('描述') || col.includes('项目') || col.includes('item') || col.includes('service')) serviceCol = idx;
-            else if (col.includes('金额') || col.includes('花费') || col.includes('费用') || col.includes('price') || col.includes('amount') || col.includes('cost')) amountCol = idx;
-            else if (col.includes('a') || col.includes('甲') || col.includes('方a')) payerACol = idx;
-            else if (col.includes('b') || col.includes('乙') || col.includes('方b')) payerBCol = idx;
-          });
+          // 智能判断第一行是否为表头
+          const firstRowCells = splitCells(validLines[0]);
+          const hasDateHeader = firstRowCells.some(c => /时间|日期|date|time/i.test(c));
+          const hasServiceHeader = firstRowCells.some(c => /产品|服务|项目|描述|item|service/i.test(c));
+          const hasAmountHeader = firstRowCells.some(c => /金额|花费|费用|cost|amount|price/i.test(c));
+          const hasPayerHeader = firstRowCells.some(c => /支付方|付款方|payer|方a|方b/i.test(c));
 
-          // 如果没有根据名称匹配到，按默认前5列位置回退
-          if (dateCol === -1 && headers.length > 0) dateCol = 0;
-          if (serviceCol === -1 && headers.length > 1) serviceCol = 1;
-          if (amountCol === -1 && headers.length > 2) amountCol = 2;
-          if (payerACol === -1 && headers.length > 3) payerACol = 3;
-          if (payerBCol === -1 && headers.length > 4) payerBCol = 4;
+          const isHeaderRow = (hasDateHeader && (hasServiceHeader || hasAmountHeader)) || 
+                              (hasServiceHeader && hasAmountHeader) || 
+                              (hasPayerHeader && (hasDateHeader || hasAmountHeader));
 
-          const parsedRows = [];
+          let startIndex = 0;
+          let dateCol = 0;
+          let serviceCol = 1;
+          let amountCol = 2;
+          let payerACol = 3;
+          let payerBCol = 4;
 
-          for (let i = headerIdx + 1; i < lines.length; i++) {
-            const line = lines[i];
-            // 过滤分隔线，如 |:---|:---|
-            if (/^\|?[\s\-:|]+\|?$/.test(line)) continue;
-            if (!line.includes('|')) break; // 遇到非表格行停止
+          if (isHeaderRow) {
+            startIndex = 1;
+            firstRowCells.forEach((h, idx) => {
+              const col = h.toLowerCase();
+              if (col.includes('时间') || col.includes('日期') || col.includes('date') || col.includes('time')) dateCol = idx;
+              else if (col.includes('产品') || col.includes('服务') || col.includes('描述') || col.includes('项目') || col.includes('item') || col.includes('service')) serviceCol = idx;
+              else if (col.includes('金额') || col.includes('花费') || col.includes('费用') || col.includes('price') || col.includes('amount') || col.includes('cost')) amountCol = idx;
+              else if (col.includes('a') || col.includes('甲') || col.includes('方a')) payerACol = idx;
+              else if (col.includes('b') || col.includes('乙') || col.includes('方b')) payerBCol = idx;
+            });
+          } else {
+            // 纯数据行模式（无表头）：根据列内容特征自适应校准
+            startIndex = 0;
+            dateCol = 0;
+            serviceCol = 1;
+            amountCol = 2;
+            payerACol = 3;
+            payerBCol = 4;
 
-            const cells = splitCells(line);
-            if (cells.length < 2) continue;
+            firstRowCells.forEach((cell, idx) => {
+              const clean = cell.replace(/[\uFE00-\uFE0F]/g, '').trim();
+              if (/^\d{4}[./-]\d{1,2}[./-]\d{1,2}/.test(clean)) {
+                dateCol = idx;
+              } else if (/[$￥¥]|usd|rmb|元/i.test(clean) && /\d/.test(clean)) {
+                amountCol = idx;
+              }
+            });
 
-            const date = cells[dateCol] || '';
-            const service = cells[serviceCol] || '';
-            const amountCell = cells[amountCol] || '';
+            if (serviceCol === dateCol || serviceCol === amountCol) {
+              serviceCol = (dateCol === 0 && amountCol === 2) ? 1 : (dateCol === 0 ? 1 : 0);
+            }
+            if (payerACol <= amountCol) payerACol = amountCol + 1;
+            if (payerBCol <= payerACol) payerBCol = payerACol + 1;
+          }
 
-            // 解析金额与币种
-            let currency = 'CNY';
-            if (amountCell.includes('$') || /usd/i.test(amountCell) || amountCell.includes('美元')) {
-              currency = 'USD';
-            } else if (amountCell.includes('￥') || amountCell.includes('¥') || /cny|rmb/i.test(amountCell) || amountCell.includes('元')) {
-              currency = 'CNY';
+          // 弹性金额与币种解析：支持 20$(133￥) 等复合附注
+          const parseAmount = (cell) => {
+            const cleanStr = (cell || '').replace(/[\uFE00-\uFE0F]/g, '').trim();
+            // 优先提取主金额（括号外的首个金额，如 20$(133￥) 中提取 20$）
+            let primaryPart = cleanStr;
+            const parenMatch = cleanStr.match(/^([^(（]+)/);
+            if (parenMatch && parenMatch[1].trim()) {
+              primaryPart = parenMatch[1].trim();
             }
 
-            // 正则提取浮点数字
-            const numMatch = amountCell.replace(/,/g, '').match(/[-+]?\d*\.?\d+/);
+            let currency = 'CNY';
+            if (primaryPart.includes('$') || /usd/i.test(primaryPart) || primaryPart.includes('美元')) {
+              currency = 'USD';
+            } else if (primaryPart.includes('￥') || primaryPart.includes('¥') || /cny|rmb/i.test(primaryPart) || primaryPart.includes('元')) {
+              currency = 'CNY';
+            } else {
+              if (cleanStr.includes('$') || /usd/i.test(cleanStr)) currency = 'USD';
+            }
+
+            const numMatch = primaryPart.replace(/,/g, '').match(/[-+]?\d*\.?\d+/) || cleanStr.replace(/,/g, '').match(/[-+]?\d*\.?\d+/);
             const amount = numMatch ? parseFloat(numMatch[0]) : 0;
+            return { amount, currency };
+          };
 
-            // 识别支付方勾选
-            const valA = (cells[payerACol] || '').trim();
-            const valB = (cells[payerBCol] || '').trim();
+          // 识别打勾标记（忽略特殊字符与空白）
+          const isChecked = (val) => {
+            const clean = (val || '').replace(/[\uFE00-\uFE0F]/g, '').trim();
+            return /[✔️✔√xX1是有A对]/i.test(clean) || (clean.length > 0 && !clean.includes(' '));
+          };
 
-            const isChecked = (val) => {
-              return /[✔️✔√xX1是有A对]/i.test(val) || (val.length > 0 && !val.includes(' '));
-            };
+          const parsedRows = [];
+          for (let i = startIndex; i < validLines.length; i++) {
+            const cells = splitCells(validLines[i]);
+            if (cells.length < 2) continue;
+
+            const date = (cells[dateCol] || '').replace(/[\uFE00-\uFE0F]/g, '').trim();
+            const service = (cells[serviceCol] || '').trim();
+            const amountCell = cells[amountCol] || '';
+            const { amount, currency } = parseAmount(amountCell);
+
+            const checkA = isChecked(cells[payerACol]);
+            const checkB = isChecked(cells[payerBCol]);
 
             let payer = 'A';
-            const checkA = isChecked(valA);
-            const checkB = isChecked(valB);
-
             if (checkB && !checkA) {
               payer = 'B';
             } else if (checkA) {
