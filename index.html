@@ -434,8 +434,37 @@
             </tr>
 
             <tr v-if="items.length === 0">
-              <td colspan="7" class="py-12 text-center text-slate-400 text-sm">
-                当前表格为空，点击上方「➕ 添加一行」或「📋 粘贴 Markdown 表格」开始
+              <td colspan="7" class="py-16 text-center">
+                <div class="flex flex-col items-center justify-center space-y-3">
+                  <span class="text-3xl">📝</span>
+                  <p class="text-sm font-semibold text-slate-700">当前采购账单明细为空</p>
+                  <p class="text-xs text-slate-400 max-w-md leading-relaxed">
+                    您可以直接录入账单、使用「📋 粘贴 Markdown 表格」批量导入，或者点击「🔄 恢复示例」载入参考账单
+                  </p>
+                  <div class="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                    <button 
+                      type="button" 
+                      @click="addRow" 
+                      class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition cursor-pointer"
+                    >
+                      ➕ 添加一行
+                    </button>
+                    <button 
+                      type="button" 
+                      @click="openImportDialog" 
+                      class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition cursor-pointer"
+                    >
+                      📋 粘贴 Markdown 表格
+                    </button>
+                    <button 
+                      type="button" 
+                      @click="resetToDefault" 
+                      class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 transition cursor-pointer"
+                    >
+                      🔄 恢复示例
+                    </button>
+                  </div>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -908,7 +937,8 @@
         const payerAName = ref('支付方A');
         const payerBName = ref('支付方B');
         const splitRatioA = ref(50);
-        const items = ref([...defaultSampleData]);
+        // 初始为空表格，用户点击“恢复示例”或粘贴/录入后才展示数据
+        const items = ref([]);
         const calculated = ref(false);
         const resultSection = ref(null);
         const toastMessage = ref('');
@@ -1124,11 +1154,16 @@
           payerBName.value = '支付方B';
           splitRatioA.value = 50;
           calculated.value = false;
-          showToast('已恢复为初始示例数据');
+          showToast('已载入 4 条参考示例账单！点击下方「开始验算」可查看推导');
         };
 
         // 核心验算逻辑
         const runVerification = async (shouldScroll = true) => {
+          if (!items.value || items.value.length === 0) {
+            showToast('当前采购账单明细为空，请先添加账单或点击「恢复示例」！');
+            return;
+          }
+
           const rate = Number(exchangeRate.value) || 0;
           const nameA = payerAName.value || '支付方A';
           const nameB = payerBName.value || '支付方B';
@@ -1594,11 +1629,12 @@
 
           const loaded = loadFromUrlHash();
           if (!loaded) {
-            // 默认自动异步同步最新的实时公网汇率
+            // 默认自动异步同步最新的实时公网汇率，表格初始保持清空状态
             fetchLiveRate(false);
+          } else {
+            // 仅当用户从 URL 分享链接打开带有数据时才自动验算
+            runVerification(false);
           }
-          // 初始运行一次验算准备数据（初始不自动滚屏，等用户点击按钮时再缓缓滑动）
-          runVerification(false);
         });
 
         return {
