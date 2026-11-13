@@ -57,29 +57,26 @@
     .halo-border-wrap {
       position: relative;
       padding: 2.5px;
-      border-radius: 9999px;
+      border-radius: 1.25rem;
       overflow: hidden;
-      display: inline-flex;
+      display: flex;
       align-items: center;
-      box-shadow: 0 0 25px rgba(52, 211, 153, 0.35), 0 0 50px rgba(59, 130, 246, 0.2);
+      box-shadow: 0 0 30px rgba(52, 211, 153, 0.35), 0 0 60px rgba(59, 130, 246, 0.2);
       animation: pulse-halo 3s ease-in-out infinite;
     }
 
     .halo-border-spin {
       position: absolute;
-      inset: -150%;
+      inset: -200%;
       background: conic-gradient(from 0deg, #10b981, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #f59e0b, #10b981);
-      animation: spin-halo 3s linear infinite;
+      animation: spin-halo 3.5s linear infinite;
     }
 
     .halo-border-content {
       position: relative;
       background: #0f172a;
-      border-radius: 9999px;
-      padding: 0.6rem 1.4rem;
+      border-radius: calc(1.25rem - 2.5px);
       display: flex;
-      align-items: center;
-      gap: 0.75rem;
       z-index: 1;
     }
 
@@ -409,19 +406,21 @@
         <div class="absolute -right-12 -top-12 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl"></div>
 
         <div class="relative z-10">
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 border-b border-slate-700/60 pb-6 mb-6">
-            <div>
-              <span class="text-xs uppercase tracking-wider text-blue-400 font-semibold block mb-2">最终平摊结算建议</span>
-              
-              <div v-if="calcResult.transferAmount === 0" class="text-xl sm:text-2xl font-black">
-                🎉 账目刚好对等，无需相互转账！
-              </div>
-              
-              <!-- 持续显示光圈转动的转账提示行 -->
-              <div v-else class="inline-block">
-                <div :class="showGlowHalo ? 'halo-border-wrap' : 'inline-flex items-center gap-2 p-1 bg-slate-800/80 rounded-full border border-slate-700'">
-                  <div v-if="showGlowHalo" class="halo-border-spin"></div>
-                  <div :class="showGlowHalo ? 'halo-border-content' : 'flex items-center gap-2.5 px-3 py-1.5'">
+          <div class="border-b border-slate-700/60 pb-6 mb-6">
+            <span class="text-xs uppercase tracking-wider text-blue-400 font-semibold block mb-2.5">最终平摊结算建议</span>
+            
+            <div v-if="calcResult.transferAmount === 0" class="text-xl sm:text-2xl font-black">
+              🎉 账目刚好对等，无需相互转账！
+            </div>
+            
+            <!-- 持续显示光圈转动的整行转账与金额提示框 -->
+            <div v-else class="w-full">
+              <div :class="showGlowHalo ? 'halo-border-wrap w-full' : 'w-full flex items-center gap-2 p-1 bg-slate-800/80 rounded-2xl border border-slate-700'">
+                <div v-if="showGlowHalo" class="halo-border-spin"></div>
+                <div :class="showGlowHalo ? 'halo-border-content w-full flex-col md:flex-row md:items-center justify-between gap-4 py-3.5 px-5 sm:px-7' : 'w-full flex flex-col md:flex-row md:items-center justify-between gap-4 p-4'">
+                  
+                  <!-- 左侧：转账关系 -->
+                  <div class="flex items-center gap-3">
                     <div class="orbital-ring">
                       <div class="orbital-ring-spinner"></div>
                       <div class="orbital-ring-dot"></div>
@@ -434,15 +433,19 @@
                       <span>转账</span>
                     </div>
                   </div>
+
+                  <!-- 右侧：金额与精确数值 -->
+                  <div class="flex items-baseline gap-2 pl-9 md:pl-0 flex-wrap">
+                    <span class="text-2xl sm:text-4xl font-black text-emerald-400 font-mono tracking-tight">
+                      ¥ {{ calcResult.transferAmountFormatted }}
+                    </span>
+                    <span class="text-xs sm:text-sm font-bold text-slate-200">元</span>
+                    <span class="text-xs text-slate-300 font-mono bg-slate-800/90 px-2 py-0.5 rounded-md border border-slate-700/80 ml-1">
+                      精确: {{ calcResult.transferAmountRaw }}
+                    </span>
+                  </div>
+
                 </div>
-              </div>
-            </div>
-            
-            <div v-if="calcResult.transferAmount > 0" class="sm:text-right">
-              <span class="text-xs text-slate-400 block mb-1">应转账金额</span>
-              <div class="text-3xl sm:text-4xl font-black text-emerald-400 font-mono tracking-tight">
-                ¥ {{ calcResult.transferAmountFormatted }}
-                <span class="text-xs font-normal text-slate-300 block sm:inline mt-0.5">元 (精确: {{ calcResult.transferAmountRaw }})</span>
               </div>
             </div>
           </div>
